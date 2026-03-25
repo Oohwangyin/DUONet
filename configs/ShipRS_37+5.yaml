@@ -11,16 +11,18 @@ MODEL:
   FPN:
     IN_FEATURES: ["res2", "res3", "res4", "res5"]
   ANCHOR_GENERATOR:
+    NAME: "RotatedAnchorGenerator"  # 修改为 RotatedAnchorGenerator
     SIZES: [[32], [64], [128], [256], [512]]
     ASPECT_RATIOS: [[0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0]]
+    ANGLES: [[-90., -60., -30., 0., 30., 60., 90.]]  # 添加角度配置
   RPN:
     IN_FEATURES: ["p2", "p3", "p4", "p5", "p6"]
     PRE_NMS_TOPK_TRAIN: 3000
     PRE_NMS_TOPK_TEST: 2000
     POST_NMS_TOPK_TRAIN: 2000
     POST_NMS_TOPK_TEST: 2000
-    # 修改这里：将 prob_iou 改为 smooth_l1 或 giou
-#    BOX_REGRESSION_TYPE: "smooth_l1"  # 原来是 prob_iou
+    BBOX_REG_LOSS_TYPE: "smooth_l1"
+    BBOX_REG_LOSS_WEIGHT: 1.0
   ROI_HEADS:
      NAME: "RROIHeads"
      BATCH_SIZE_PER_IMAGE: 512
@@ -32,9 +34,11 @@ MODEL:
     NAME: "FastRCNNConvFCHead"
     NUM_FC: 2
     POOLER_RESOLUTION: 7
-    POOLER_TYPE: "ROIAlignRotated"  # 添加这一行
+    POOLER_TYPE: "ROIAlignRotated"
+    BBOX_REG_LOSS_TYPE: "smooth_l1"
+    BBOX_REG_WEIGHTS: (10., 10., 5., 5., 1.)
   PROPOSAL_GENERATOR:
-    NAME: "RPN"
+    NAME: "RRPN"  # 修改为 RRPN
 DATASETS:
   TRAIN: ("coco_my_train1234",)
   TEST: ("coco_my_val1234",)
