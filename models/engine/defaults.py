@@ -14,14 +14,14 @@ from detectron2.evaluation import (DatasetEvaluator, DatasetEvaluators,
                                    inference_on_dataset, print_csv_format,
                                    verify_results)
 from detectron2.modeling import GeneralizedRCNNWithTTA, build_model
-from detectron2.solver import build_lr_scheduler
+from detectron2.solver import build_lr_scheduler, build_optimizer
 from detectron2.utils import comm
 from detectron2.utils.logger import setup_logger
 from fvcore.nn.precise_bn import get_bn_modules
 
 from ..data import build_detection_test_loader, build_detection_train_loader
 from ..evaluation import PascalVOCDetectionEvaluator
-from ..solver import build_optimizer
+# from ..solver import build_optimizer
 
 
 
@@ -77,7 +77,8 @@ def mapper(dataset_dict):
 
 
 
-
+# 继承自 Detectron2 的 TrainerBase 基类
+# 这是一个标准训练流程封装器，简化了训练逻辑
 class OpenDetTrainer(TrainerBase):
     """
     A trainer with default training logic. It does the following:
@@ -127,35 +128,47 @@ class OpenDetTrainer(TrainerBase):
             cfg (CfgNode):
         """
         super().__init__()
+        # 第 1 行：获取日志记录器
         logger = logging.getLogger("detectron2")
         # setup_logger is not called for d2
+        # 第 2-4 行：如果日志未启用 INFO 级别，则设置日志系统
         if not logger.isEnabledFor(logging.INFO):
             setup_logger()
+        # 第 5 行：根据 GPU 数量自动调整 batch size 等参数
         cfg = OpenDetTrainer.auto_scale_workers(cfg, comm.get_world_size())
 
         # Assume these objects must be constructed in this order.
+        # 第 7 行：构建模型（调用 build_model 方法）
         model = self.build_model(cfg)
+        # 第 8 行：构建优化器（如 SGD、AdamW）
         optimizer = self.build_optimizer(cfg, model)
+        # 第 9 行：构建训练数据加载器
         data_loader = self.build_train_loader(cfg)
-
+        # 第 10-11 行：将模型包装为分布式数据并行（DDP）
         model = create_ddp_model(
             model, broadcast_buffers=False, find_unused_parameters=True)
         # model = create_ddp_model(model, broadcast_buffers=False)
+
+        # 第 12-13 行：根据是否启用 AMP（自动混合精度）选择训练器
         self._trainer = (AMPTrainer if cfg.SOLVER.AMP.ENABLED else SimpleTrainer)(
             model, data_loader, optimizer
         )
-
+        # 第 14 行：构建学习率调度器（如多步衰减、余弦退火）
         self.scheduler = self.build_lr_scheduler(cfg, optimizer)
+        # 第 15-19 行：创建检查点管理器
         self.checkpointer = DetectionCheckpointer(
             # Assume you want to save checkpoints together with logs/statistics
             model,
             cfg.OUTPUT_DIR,
             trainer=weakref.proxy(self),
         )
+        # 第 20 行：记录起始迭代次数
         self.start_iter = 0
+        # 第 21 行：记录最大迭代次数
         self.max_iter = cfg.SOLVER.MAX_ITER
+        # 第 22 行：保存配置引用
         self.cfg = cfg
-
+        # 第 23 行：注册钩子函数（评估、保存检查点、日志等）
         self.register_hooks(self.build_hooks())
 
     def resume_or_load(self, resume=True):
@@ -172,10 +185,14 @@ class OpenDetTrainer(TrainerBase):
         Args:
             resume (bool): whether to do resume or not
         """
+        # resume=True: 尝试从输出目录恢复训练（加载所有状态）
+        # resume=False: 只加载预训练权重，从头开始训练
         self.checkpointer.resume_or_load(self.cfg.MODEL.WEIGHTS, resume=resume)
+        # 如果成功恢复训练
         if resume and self.checkpointer.has_checkpoint():
             # The checkpoint stores the training iteration that just finished, thus we start
             # at the next iteration
+            # 检查点保存的是已完成的迭代次数，所以从下一次开始
             self.start_iter = self.iter + 1
 
     def build_hooks(self):
@@ -187,40 +204,48 @@ class OpenDetTrainer(TrainerBase):
             list[HookBase]:
         """
         cfg = self.cfg.clone()
-        cfg.defrost()
+        cfg.defrost()  # 解冻配置以便修改
         cfg.DATALOADER.NUM_WORKERS = 0  # save some memory and time for PreciseBN
 
         ret = [
+            # Hook 1: 迭代计时器，记录每个 iteration 的时间
             hooks.IterationTimer(),
+            # Hook 2: 学习率调度器，按策略调整 LR
             hooks.LRScheduler(),
+            # Hook 3: PreciseBN（可选）
+            # 在评估前重新计算 BatchNorm 的精确统计量
             hooks.PreciseBN(
                 # Run at the same freq as (but before) evaluation.
-                cfg.TEST.EVAL_PERIOD,
-                self.model,
+                cfg.TEST.EVAL_PERIOD,# 评估频率
+                self.model,# 模型
                 # Build a new data loader to not affect training
-                self.build_train_loader(cfg),
-                cfg.TEST.PRECISE_BN.NUM_ITER,
+                self.build_train_loader(cfg), # 数据加载器
+                cfg.TEST.PRECISE_BN.NUM_ITER, # 迭代次数
             )
             if cfg.TEST.PRECISE_BN.ENABLED and get_bn_modules(self.model)
-            else None,
+            else None, # 如果不启用或没有 BN 层则为 None
         ]
 
         # Do PreciseBN before checkpointer, because it updates the model and need to
         # be saved by checkpointer.
         # This is not always the best: if checkpointing has a different frequency,
         # some checkpoints may have more precise statistics than others.
+        # Hook 4: 定期保存检查点（只在主进程）
         if comm.is_main_process():
             ret.append(hooks.PeriodicCheckpointer(
                 self.checkpointer, cfg.SOLVER.CHECKPOINT_PERIOD))
 
+        # 定义测试并保存结果的函数
         def test_and_save_results():
             self._last_eval_results = self.test(self.cfg, self.model)
             return self._last_eval_results
 
         # Do evaluation after checkpointer, because then if it fails,
         # we can use the saved checkpoint to debug.
+        # Hook 5: 定期评估（在检查点之后，方便调试失败情况）
         ret.append(hooks.EvalHook(cfg.TEST.EVAL_PERIOD, test_and_save_results))
 
+        # Hook 6: 定期写入日志和指标（只在主进程，每 20 次迭代写一次）
         if comm.is_main_process():
             # Here the default print/log frequency of each writer is used.
             # run writers in the end, so that evaluation metrics are written
@@ -245,7 +270,9 @@ class OpenDetTrainer(TrainerBase):
         Returns:
             OrderedDict of results, if evaluation is enabled. Otherwise None.
         """
+        # 调用父类训练方法，从 start_iter 到 max_iter
         super().train(self.start_iter, self.max_iter)
+        # 如果配置了期望结果且是主进程，验证结果是否符合预期
         if len(self.cfg.TEST.EXPECTED_RESULTS) and comm.is_main_process():
             assert hasattr(
                 self, "_last_eval_results"
@@ -254,7 +281,9 @@ class OpenDetTrainer(TrainerBase):
             return self._last_eval_results
 
     def run_step(self):
+        # 同步内部训练器的迭代计数
         self._trainer.iter = self.iter
+        # 执行单次迭代（forward → backward → optimize）
         self._trainer.run_step()
 
     @classmethod
@@ -266,9 +295,9 @@ class OpenDetTrainer(TrainerBase):
         It now calls :func:`detectron2.modeling.build_model`.
         Overwrite it if you'd like a different model.
         """
-        model = build_model(cfg)
+        model = build_model(cfg) # 调用 Detectron2 的 build_model
         logger = logging.getLogger(__name__)
-        logger.info("Model:\n{}".format(model))
+        logger.info("Model:\n{}".format(model))# 打印模型结构
         return model
 
     @classmethod
@@ -280,7 +309,7 @@ class OpenDetTrainer(TrainerBase):
         It now calls :func:`detectron2.solver.build_optimizer`.
         Overwrite it if you'd like a different optimizer.
         """
-        return build_optimizer(cfg, model)
+        return build_optimizer(cfg, model)# 根据配置构建优化器
 
     @classmethod
     def build_lr_scheduler(cls, cfg, optimizer):
@@ -288,7 +317,7 @@ class OpenDetTrainer(TrainerBase):
         It now calls :func:`detectron2.solver.build_lr_scheduler`.
         Overwrite it if you'd like a different scheduler.
         """
-        return build_lr_scheduler(cfg, optimizer)
+        return build_lr_scheduler(cfg, optimizer)# 构建学习率调度器
 
     @classmethod
     def build_train_loader(cls, cfg):
@@ -300,6 +329,7 @@ class OpenDetTrainer(TrainerBase):
         Overwrite it if you'd like a different data loader.
         """
         # return build_detection_train_loader(cfg)
+        # 使用自定义的 mapper 进行数据增强和预处理
         return build_detection_train_loader(cfg, mapper=mapper)
 
     @classmethod
@@ -333,13 +363,16 @@ class OpenDetTrainer(TrainerBase):
             return evaluator_list[0]
         return DatasetEvaluators(evaluator_list)
 
+    # 测试方法
     @classmethod
     def test_with_TTA(cls, cfg, model):
         logger = logging.getLogger("detectron2.trainer")
         # In the end of training, run an evaluation with TTA
         # Only support some R-CNN models.
         logger.info("Running inference with test-time augmentation ...")
+        # 使用 TTA 包装模型（多尺度、翻转等增强）
         model = GeneralizedRCNNWithTTA(cfg, model)
+        # 为每个测试数据集构建评估器
         evaluators = [
             cls.build_evaluator(
                 cfg, name, output_folder=os.path.join(
@@ -347,7 +380,9 @@ class OpenDetTrainer(TrainerBase):
             )
             for name in cfg.DATASETS.TEST
         ]
+        # 执行测试
         res = cls.test(cfg, model, evaluators)
+        # 在结果键名添加"_TTA"后缀
         res = OrderedDict({k + "_TTA": v for k, v in res.items()})
         return res
 
@@ -365,8 +400,10 @@ class OpenDetTrainer(TrainerBase):
             dict: a dict of result metrics
         """
         logger = logging.getLogger(__name__)
+        # 如果传入单个评估器，转为列表
         if isinstance(evaluators, DatasetEvaluator):
             evaluators = [evaluators]
+        # 验证评估器数量与测试数据集数量一致
         if evaluators is not None:
             assert len(cfg.DATASETS.TEST) == len(evaluators), "{} != {}".format(
                 len(cfg.DATASETS.TEST), len(evaluators)
@@ -374,9 +411,11 @@ class OpenDetTrainer(TrainerBase):
 
         results = OrderedDict()
         for idx, dataset_name in enumerate(cfg.DATASETS.TEST):
+            # 构建测试数据加载器
             data_loader = cls.build_test_loader(cfg, dataset_name)
             # When evaluators are passed in as arguments,
             # implicitly assume that evaluators can be created before data_loader.
+            # 获取评估器（传入的或现场构建的）
             if evaluators is not None:
                 evaluator = evaluators[idx]
             else:
@@ -389,8 +428,10 @@ class OpenDetTrainer(TrainerBase):
                     )
                     results[dataset_name] = {}
                     continue
+            # 在数据集上执行推理
             results_i = inference_on_dataset(model, data_loader, evaluator)
             results[dataset_name] = results_i
+            # 在主进程打印 CSV 格式的结果
             if comm.is_main_process():
                 assert isinstance(
                     results_i, dict
@@ -401,6 +442,7 @@ class OpenDetTrainer(TrainerBase):
                     "Evaluation results for {} in csv format:".format(dataset_name))
                 print_csv_format(results_i)
 
+        # 如果只有一个数据集，直接返回其结果
         if len(results) == 1:
             results = list(results.values())[0]
         return results
@@ -448,16 +490,20 @@ class OpenDetTrainer(TrainerBase):
             CfgNode: a new config. Same as original if ``cfg.SOLVER.REFERENCE_WORLD_SIZE==0``.
         """
         old_world_size = cfg.SOLVER.REFERENCE_WORLD_SIZE
+        # 如果没有设置参考 GPU 数或当前 GPU 数等于参考值，直接返回
         if old_world_size == 0 or old_world_size == num_workers:
             return cfg
         cfg = cfg.clone()
         frozen = cfg.is_frozen()
         cfg.defrost()
 
+        # 验证原始配置的 batch size 能被参考 GPU 数整除
         assert (
             cfg.SOLVER.IMS_PER_BATCH % old_world_size == 0
         ), "Invalid REFERENCE_WORLD_SIZE in config!"
+        # 计算缩放比例
         scale = num_workers / old_world_size
+        # 按比例缩放各项参数
         bs = cfg.SOLVER.IMS_PER_BATCH = int(
             round(cfg.SOLVER.IMS_PER_BATCH * scale))
         lr = cfg.SOLVER.BASE_LR = cfg.SOLVER.BASE_LR * scale

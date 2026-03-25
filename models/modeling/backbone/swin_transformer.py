@@ -14,6 +14,7 @@ from detectron2.modeling.backbone import Backbone
 from detectron2.modeling.backbone.build import BACKBONE_REGISTRY
 from detectron2.modeling.backbone.fpn import FPN, LastLevelMaxPool, LastLevelP6P7
 from detectron2.layers import ShapeSpec
+import fvcore.nn.weight_init as weight_init
 
 
 class Mlp(nn.Module):

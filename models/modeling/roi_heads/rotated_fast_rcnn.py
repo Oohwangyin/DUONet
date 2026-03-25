@@ -7,10 +7,10 @@ from detectron2.config import configurable
 from detectron2.layers import ShapeSpec, batched_nms_rotated
 from detectron2.structures import Instances, RotatedBoxes, pairwise_iou_rotated
 from detectron2.utils.events import get_event_storage
+from detectron2.modeling.proposal_generator.proposal_utils import add_ground_truth_to_proposals
 
 from ..box_regression import Box2BoxTransformRotated
 from ..poolers import ROIPooler
-from ..proposal_generator.proposal_utils import add_ground_truth_to_proposals
 from .box_head import build_box_head
 from .fast_rcnn import FastRCNNOutputLayers
 from .roi_heads import ROI_HEADS_REGISTRY, StandardROIHeads

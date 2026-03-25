@@ -11,16 +11,16 @@ from detectron2.layers import ShapeSpec, nonzero_tuple
 from detectron2.structures import Boxes, ImageList, Instances, pairwise_iou
 from detectron2.utils.events import get_event_storage
 from detectron2.utils.registry import Registry
+from detectron2.modeling.backbone.resnet import BottleneckBlock, ResNet
+from detectron2.modeling.poolers import ROIPooler
+from detectron2.modeling.proposal_generator.proposal_utils import add_ground_truth_to_proposals
+from detectron2.modeling.sampling import subsample_labels
+from detectron2.modeling.roi_heads.box_head import build_box_head
+from detectron2.modeling.roi_heads.fast_rcnn import FastRCNNOutputLayers
+from detectron2.modeling.roi_heads.keypoint_head import build_keypoint_head
+from detectron2.modeling.roi_heads.mask_head import build_mask_head
 
-from ..backbone.resnet import BottleneckBlock, ResNet
 from ..matcher import Matcher
-from ..poolers import ROIPooler
-from ..proposal_generator.proposal_utils import add_ground_truth_to_proposals
-from ..sampling import subsample_labels
-from .box_head import build_box_head
-from .fast_rcnn import FastRCNNOutputLayers
-from .keypoint_head import build_keypoint_head
-from .mask_head import build_mask_head
 
 ROI_HEADS_REGISTRY = Registry("ROI_HEADS")
 ROI_HEADS_REGISTRY.__doc__ = """
