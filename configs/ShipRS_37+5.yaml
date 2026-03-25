@@ -1,51 +1,61 @@
 _BASE_: "./Base-RCNN-FPN.yaml"
 
+# 模型结构
 MODEL:
-  WEIGHTS: "checkpoints/R-50.pkl"
-  MASK_ON: False
+  WEIGHTS: "checkpoints/R-50.pkl"  # 从头训练，不加载预训练权重
+  MASK_ON: False # 不使用实例分割（只检测）
   RESNETS:
-    DEPTH: 50
-  META_ARCHITECTURE: "GeneralizedRCNN"
+    DEPTH: 50 # 使用 ResNet-50 作为骨干网络
+  META_ARCHITECTURE: "GeneralizedRCNN" # 通用 R-CNN 架构
   BACKBONE:
-    NAME: "build_resnet_fpn_backbone"
+    NAME: "build_resnet_fpn_backbone" # 构建 ResNet+FPN 骨干
+  # 特征金字塔
   FPN:
-    IN_FEATURES: ["res2", "res3", "res4", "res5"]
+    IN_FEATURES: ["res2", "res3", "res4", "res5"] # 使用 ResNet 的 4 个阶段输出
+  #  锚框生成器，每个位置生成5尺度*7宽高比*7角度=245个旋转锚框
   ANCHOR_GENERATOR:
-    SIZES: [[32], [64], [128], [256], [512]]
-    ASPECT_RATIOS: [[0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0]]
+    NAME: "RotatedAnchorGenerator" # 旋转锚框生成器
+    SIZES: [[32], [64], [128], [256], [512]] # 5 种尺度
+    ASPECT_RATIOS: [[0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0]] # 7 种宽高比
+    ANGLES: [[-90., -60., -30., 0., 30., 60., 90.]] # 7 个旋转角度
+  # 区域提议网络
   RPN:
-    IN_FEATURES: ["p2", "p3", "p4", "p5", "p6"]
-    PRE_NMS_TOPK_TRAIN: 3000
-    PRE_NMS_TOPK_TEST: 2000
-    POST_NMS_TOPK_TRAIN: 2000
-    POST_NMS_TOPK_TEST: 2000
-    # 修改这里：将 prob_iou 改为 smooth_l1 或 giou
-#    BOX_REGRESSION_TYPE: "smooth_l1"  # 原来是 prob_iou
+    IN_FEATURES: ["p2", "p3", "p4", "p5", "p6"] # 在 5 个 FPN 层级上生成提议
+    PRE_NMS_TOPK_TRAIN: 3000 # NMS 前保留 3000 个提议（训练）
+    PRE_NMS_TOPK_TEST: 2000 # NMS 前保留 2000 个提议（测试）
+    POST_NMS_TOPK_TRAIN: 2000 # NMS 后保留 2000 个提议（训练）
+    POST_NMS_TOPK_TEST: 2000 # NMS 后保留 2000 个提议（测试）
+    BBOX_REG_LOSS_TYPE: "smooth_l1" # 边界框回归损失函数
+    BBOX_REG_LOSS_WEIGHT: 1.0 # 回归损失权重
+    BBOX_REG_WEIGHTS: (1.0, 1.0, 1.0, 1.0, 1.0)   # 5个权重，对应 dx, dy, dw, dh, dθ
   ROI_HEADS:
-     NAME: "RROIHeads"
-     BATCH_SIZE_PER_IMAGE: 512
-     NUM_CLASSES: 38  # 37 + unknown
-     NUM_KNOWN_CLASSES: 37
-     NMS_THRESH_TEST: 0.3
-     IOU_THRESHOLDS: [0.5]
+     NAME: "RROIHeads" # 旋转 ROI Heads
+     BATCH_SIZE_PER_IMAGE: 512 # 每张图像采样 512 个 ROI
+     NUM_CLASSES: 38  #  总类别数 (37 已知 + 1 unknown)
+     NUM_KNOWN_CLASSES: 37  # 已知类别数
+     NMS_THRESH_TEST: 0.3 # 测试时的 NMS 阈值
+     IOU_THRESHOLDS: [0.5] # IoU 匹配阈值
   ROI_BOX_HEAD:
-    NAME: "FastRCNNConvFCHead"
-    NUM_FC: 2
-    POOLER_RESOLUTION: 7
-    POOLER_TYPE: "ROIAlignRotated"  # 添加这一行
+    NAME: "FastRCNNConvFCHead" # 使用全连接头
+    NUM_FC: 2 # 2 个全连接层
+    POOLER_RESOLUTION: 7 # ROI pooling 输出 7x7
+    POOLER_TYPE: "ROIAlignRotated" # 旋转 ROI Align
+    BBOX_REG_LOSS_TYPE: "smooth_l1" # 回归损失
+    BBOX_REG_WEIGHTS: (10., 10., 5., 5., 1.) # 回归权重 (dx, dy, dw, dh, da)
   PROPOSAL_GENERATOR:
-    NAME: "RPN"
+    NAME: "RRPN" # 旋转区域提议网络
 DATASETS:
   TRAIN: ("coco_my_train1234",)
   TEST: ("coco_my_val1234",)
 SOLVER:
-  IMS_PER_BATCH: 8
-  BASE_LR: 0.002
-  STEPS: (5000, 8500)
-  MAX_ITER: 12000
-  CHECKPOINT_PERIOD: 500
-  WARMUP_ITERS: 200
+  IMS_PER_BATCH: 8 # 每批次 8 张图像
+  BASE_LR: 0.002 # 初始学习率
+  STEPS: (5000, 8500) # 在第 5000 和 8500 次迭代时降低学习率
+  MAX_ITER: 12000 # 最大训练 12000 次迭代
+  CHECKPOINT_PERIOD: 500 # 每 500 次迭代保存一次检查点
+  WARMUP_ITERS: 200 # 前 200 次迭代用于学习率预热
 INPUT:
   MIN_SIZE_TRAIN: (480, 512, 544, 576, 608, 640, 672, 704, 736, 768, 800)
-  MIN_SIZE_TEST: 800
+   # 训练时多尺度增强（11 种尺度随机选择）
+  MIN_SIZE_TEST: 800  # 测试时统一缩放到 800
 VERSION: 2

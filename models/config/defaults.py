@@ -8,7 +8,7 @@ def add_opendet_config(cfg):
     # unknown probability loss 未知概率损失
     # 用于处理开放集检测中的未知类别样本，通过特定的损失函数让模型学会区分已知和未知类别。
     _C.UPLOSS = CN()
-    _C.UPLOSS.START_ITER = 100  # usually the same as warmup iter损失开始的迭代次数（通常与 warmup 迭代次数相同）
+    _C.UPLOSS.START_ITER = 100  # 损失开始的迭代次数（通常与 warmup 迭代次数相同）
     _C.UPLOSS.SAMPLING_METRIC = "min_score" # 采样指标
     _C.UPLOSS.TOPK = 3  # 选择 top-k 个样本
     _C.UPLOSS.ALPHA = 1.0 # 平衡参数

@@ -34,22 +34,16 @@ __all__ = [
 
 def get_detection_dataset_dicts(names, filter_empty=True, min_keypoints=0, proposal_files=None, cfg=None):
     """
-    Load and prepare dataset dicts for instance detection/segmentation and semantic segmentation.
-
-    Args:
-        names (str or list[str]): a dataset name or a list of dataset names
-        filter_empty (bool): whether to filter out images without instance annotations
-        min_keypoints (int): filter out images with fewer keypoints than
-            `min_keypoints`. Set to 0 to do nothing.
-        proposal_files (list[str]): if given, a list of object proposal files
-            that match each dataset in `names`.
-
-    Returns:
-        list[dict]: a list of dicts following the standard dataset dict format.
+    这个函数在训练开始前被调用，负责：
+    1. 从 DatasetCatalog 获取你注册的数据集（coco_my_train1234）
+    2. 过滤空标注图像
+    3. 开集检测特殊处理（关键！）
+    4. 打印类别分布直方图
     """
     if isinstance(names, str):
         names = [names]
     assert len(names), names
+    # 获取数据集
     dataset_dicts = [DatasetCatalog.get(dataset_name)
                      for dataset_name in names]
     for dataset_name, dicts in zip(names, dataset_dicts):
@@ -75,6 +69,7 @@ def get_detection_dataset_dicts(names, filter_empty=True, min_keypoints=0, propo
 
     d_name = names[0]
     # if 'voc_coco' in d_name:
+    #开集检测处理
     if 'train' in d_name:
         dataset_dicts = remove_unk_instances(cfg, dataset_dicts)
     elif 'test' in d_name:

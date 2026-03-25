@@ -201,9 +201,12 @@ class Register:
         """
         print(10*'>','register_dataset_instances')
         # print(name,image_root,json_file)
-        # 向 Detectron2 注册自定义数据集
-        # "当有人请求名为 name 的数据集时，请调用 self.get_dicts() 函数来加载数据"
-        DatasetCatalog.register(name, lambda: self.get_dicts(dirname, split, class_names))
+        
+        # 预先加载并缓存数据集，避免每次重复解析 XML
+        dataset_dicts = self.get_dicts(dirname, split, class_names)
+        
+        # 向 Detectron2 注册自定义数据集（使用已缓存的数据）
+        DatasetCatalog.register(name, lambda: dataset_dicts)
         # DatasetCatalog.register(name, lambda: load_coco_json(json_file, image_root, name))
         # MetadataCatalog.get(name).set(json_file=json_file,
         #                               image_root=image_root,
@@ -230,7 +233,7 @@ def setup(args):
     add_opendet_config(cfg)
     # 从指定taml配置文件中读取配置，并合并到当前的cfg对象中
     cfg.merge_from_file(args.config_file)
-    # 从命令行参数列表中合并配置。典型的用法是
+    # 从命令行参数列表中合并配置。
     cfg.merge_from_list(args.opts)
     # Note: we use the key ROI_HEAD.NUM_KNOWN_CLASSES
     # for open-set data processing and evaluation.
@@ -257,16 +260,19 @@ def main(args):
     cfg = setup(args)
     # 打印模型权重文件路径
     print(cfg.MODEL.WEIGHTS)
-    # 判断是否只进行评估（不训练）
+    # 如果是评估模式，则加载模型权重，执行测试并返回结果。默认为false
     if args.eval_only:
-        # 第 4 行：使用 build_model 方法构建模型
+        # 使用 build_model 方法构建模型
         model = OpenDetTrainer.build_model(cfg)
-        
+        # 加载模型权重。若resume=True，则从cfg.OUTPUT_DIR中加载权重文件，否则从cfg.MODEL.WEIGHTS中加载权重文件。
         DetectionCheckpointer(model, save_dir=cfg.OUTPUT_DIR).resume_or_load(
             cfg.MODEL.WEIGHTS, resume=args.resume
         )
+        # 在指定的测试数据集上评估模型，返回评估结果
         res = OpenDetTrainer.test(cfg, model)
+        # cfg.TEST.AUG.ENABLED：配置项，控制是否启用测试时数据增强
         if cfg.TEST.AUG.ENABLED:
+            # 使用测试时数据增强进行评估
             res.update(OpenDetTrainer.test_with_TTA(cfg, model))
         if comm.is_main_process():
             verify_results(cfg, res)
@@ -277,9 +283,13 @@ def main(args):
     consider writing your own training loop (see plain_train_net.py) or
     subclassing the trainer.
     """
+    #  否则创建训练器，回复或重新开始训练
     trainer = OpenDetTrainer(cfg)
+    # 从检查点恢复训练或加载预训练权重
     trainer.resume_or_load(resume=args.resume)
+    # 启用测试时数据增强
     if cfg.TEST.AUG.ENABLED:
+        # 注册一个评估钩子，在训练过程中执行测试时数据增强
         trainer.register_hooks(
             [hooks.EvalHook(
                 0, lambda: trainer.test_with_TTA(cfg, trainer.model))]
