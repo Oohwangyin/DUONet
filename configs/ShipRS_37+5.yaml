@@ -35,6 +35,9 @@ MODEL:
     POOLER_TYPE: "ROIAlignRotated"  # 添加这一行
   PROPOSAL_GENERATOR:
     NAME: "RPN"
+DATASETS:
+  TRAIN: ("coco_my_train1234",)
+  TEST: ("coco_my_val1234",)
 SOLVER:
   IMS_PER_BATCH: 8
   BASE_LR: 0.002
