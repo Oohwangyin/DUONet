@@ -48,14 +48,18 @@ DATASETS:
   TRAIN: ("coco_my_train1234",)
   TEST: ("coco_my_val1234",)
 SOLVER:
-  IMS_PER_BATCH: 8 # 每批次 8 张图像
-  BASE_LR: 0.002 # 初始学习率
+  IMS_PER_BATCH: 1 # 每批次 8 张图像
+  BASE_LR: 0.001 # 初始学习率
   STEPS: (5000, 8500) # 在第 5000 和 8500 次迭代时降低学习率
   MAX_ITER: 12000 # 最大训练 12000 次迭代
   CHECKPOINT_PERIOD: 500 # 每 500 次迭代保存一次检查点
   WARMUP_ITERS: 200 # 前 200 次迭代用于学习率预热
 INPUT:
-  MIN_SIZE_TRAIN: (480, 512, 544, 576, 608, 640, 672, 704, 736, 768, 800)
+#  MIN_SIZE_TRAIN: (480, 512, 544, 576, 608, 640, 672, 704, 736, 768, 800)
+  MIN_SIZE_TRAIN: (800,)
+  MAX_SIZE_TRAIN: 800
    # 训练时多尺度增强（11 种尺度随机选择）
   MIN_SIZE_TEST: 800  # 测试时统一缩放到 800
+  CROP:
+    ENABLED: False
 VERSION: 2

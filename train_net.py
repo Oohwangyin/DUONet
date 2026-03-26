@@ -245,8 +245,11 @@ def setup(args):
     if cfg.OUTPUT_DIR == "./output":
         config_name = os.path.basename(args.config_file).split(".yaml")[0]
         cfg.OUTPUT_DIR = os.path.join(cfg.OUTPUT_DIR, config_name)
+    torch.backends.cudnn.benchmark = False  # 关闭自动算法选择
+    torch.backends.cudnn.deterministic = True  # 使用确定性算法
     # 将配置对象冻结，使其变为只读状态
     cfg.freeze()
+
     # 执行一系列标准的初始化操作，包括设置日志记录器、设置随机
     default_setup(cfg, args)
     # 设置名为"DUONet"的日志记录器
